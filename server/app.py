@@ -26,22 +26,22 @@ def index():
 class Restaurants(Resource):
     def get(self):
         restaurants = Restaurant.query.all()
-        return [Restaurant.to_dict() for Restaurant in restaurants], 200
+        return [restaurant.to_dict() for restaurant in restaurants], 200
 
 # Resource for /restaurants/<int:id>
 class RestaurantById(Resource):
     def get(self, id):
-        Restaurant = Restaurant.query.get(id)
-        if not Restaurant:
+        restaurant = Restaurant.query.get(id)
+        if not restaurant:
             return {"error": "Restaurant not found"}, 404
         # Include restaurant_pizzas in the response
-        return Restaurant.to_dict(rules=('restaurant_pizzas',)), 200
+        return restaurant.to_dict(rules=('restaurant_pizzas',)), 200
 
     def delete(self, id):
-        Restaurant = Restaurant.query.get(id)
-        if not Restaurant:
+        restaurant = Restaurant.query.get(id)
+        if not restaurant:
             return {"error": "Restaurant not found"}, 404
-        db.session.delete(Restaurant)
+        db.session.delete(restaurant)
         db.session.commit()
         return '', 204
 
@@ -56,24 +56,22 @@ class RestaurantPizzas(Resource):
     def post(self):
         data = request.get_json()
         try:
-            # Validation for the required fields
+            # Validate required fields
             if not all(key in data for key in ['price', 'pizza_id', 'restaurant_id']):
                 return {"errors": ["validation errors"]}, 400
 
-            # Checking if Pizza and Restaurant  are existing 
+            # Check if Pizza and Restaurant exist
             pizza = Pizza.query.get(data['pizza_id'])
-            Restaurant = Restaurant.query.get(data['restaurant_id'])
-            if not pizza or not Restaurant:
+            restaurant = Restaurant.query.get(data['restaurant_id'])
+            if not pizza or not restaurant:
                 return {"errors": ["validation errors"]}, 400
 
-            # creating a new Restaurant
+            # Create new RestaurantPizza
             restaurant_pizza = RestaurantPizza(
                 price=data['price'],
                 pizza_id=data['pizza_id'],
                 restaurant_id=data['restaurant_id']
             )
-            
-            
             db.session.add(restaurant_pizza)
             db.session.commit()
             return restaurant_pizza.to_dict(), 201
@@ -81,7 +79,7 @@ class RestaurantPizzas(Resource):
         except ValueError as e:
             return {"errors": ["validation errors"]}, 400
 
-# api resources
+# Add resources to the API
 api.add_resource(Restaurants, '/restaurants')
 api.add_resource(RestaurantById, '/restaurants/<int:id>')
 api.add_resource(Pizzas, '/pizzas')
