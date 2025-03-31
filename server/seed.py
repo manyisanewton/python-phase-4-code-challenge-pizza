@@ -1,41 +1,89 @@
 #!/usr/bin/env python3
+from models import db, Restaurant, RestaurantPizza, Pizza
+from flask_migrate import Migrate
+from flask import Flask, request, make_response
+from flask_restful import Api, Resource
+import os
 
-from app import app
-from models import db, Restaurant, Pizza, RestaurantPizza
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+DATABASE = os.environ.get("DB_URI", f"sqlite:///{os.path.join(BASE_DIR, 'app.db')}")
 
-with app.app_context():
+app = Flask(__name__)
+app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.json.compact = False
 
-    # This will delete any existing rows
-    # so you can run the seed file multiple times without having duplicate entries in your database
-    print("Deleting data...")
-    Pizza.query.delete()
-    Restaurant.query.delete()
-    RestaurantPizza.query.delete()
+migrate = Migrate(app, db)
+db.init_app(app)
 
-    print("Creating restaurants...")
-    shack = Restaurant(name="Karen's Pizza Shack", address='address1')
-    bistro = Restaurant(name="Sanjay's Pizza", address='address2')
-    palace = Restaurant(name="Kiki's Pizza", address='address3')
-    restaurants = [shack, bistro, palace]
+api = Api(app)
 
-    print("Creating pizzas...")
+@app.route("/")
+def index():
+    return "<h1>Code challenge</h1>"
 
-    cheese = Pizza(name="Emma", ingredients="Dough, Tomato Sauce, Cheese")
-    pepperoni = Pizza(
-        name="Geri", ingredients="Dough, Tomato Sauce, Cheese, Pepperoni")
-    california = Pizza(
-        name="Melanie", ingredients="Dough, Sauce, Ricotta, Red peppers, Mustard")
-    pizzas = [cheese, pepperoni, california]
+# Resource for /restaurants
+class Restaurants(Resource):
+    def get(self):
+        restaurants = Restaurant.query.all()
+        return [restaurant.to_dict() for restaurant in restaurants], 200
 
-    print("Creating RestaurantPizza...")
+# Resource for /restaurants/<int:id>
+class RestaurantById(Resource):
+    def get(self, id):
+        restaurant = Restaurant.query.get(id)
+        if not restaurant:
+            return {"error": "Restaurant not found"}, 404
+        # Include restaurant_pizzas in the response
+        return restaurant.to_dict(rules=('restaurant_pizzas',)), 200
 
-    pr1 = RestaurantPizza(restaurant=shack, pizza=cheese, price=1)
-    pr2 = RestaurantPizza(restaurant=bistro, pizza=pepperoni, price=4)
-    pr3 = RestaurantPizza(restaurant=palace, pizza=california, price=5)
-    restaurantPizzas = [pr1, pr2, pr3]
-    db.session.add_all(restaurants)
-    db.session.add_all(pizzas)
-    db.session.add_all(restaurantPizzas)
-    db.session.commit()
+    def delete(self, id):
+        restaurant = Restaurant.query.get(id)
+        if not restaurant:
+            return {"error": "Restaurant not found"}, 404
+        db.session.delete(restaurant)
+        db.session.commit()
+        return '', 204
 
-    print("Seeding done!")
+# Resource for /pizzas
+class Pizzas(Resource):
+    def get(self):
+        pizzas = Pizza.query.all()
+        return [pizza.to_dict() for pizza in pizzas], 200
+
+# Resource for /restaurant_pizzas
+class RestaurantPizzas(Resource):
+    def post(self):
+        data = request.get_json()
+        try:
+            # Validate required fields
+            if not all(key in data for key in ['price', 'pizza_id', 'restaurant_id']):
+                return {"errors": ["validation errors"]}, 400
+
+            # Check if Pizza and Restaurant exist
+            pizza = Pizza.query.get(data['pizza_id'])
+            restaurant = Restaurant.query.get(data['restaurant_id'])
+            if not pizza or not restaurant:
+                return {"errors": ["validation errors"]}, 400
+
+            # Create new RestaurantPizza
+            restaurant_pizza = RestaurantPizza(
+                price=data['price'],
+                pizza_id=data['pizza_id'],
+                restaurant_id=data['restaurant_id']
+            )
+            db.session.add(restaurant_pizza)
+            db.session.commit()
+            return restaurant_pizza.to_dict(), 201
+
+        except ValueError as e:
+            return {"errors": ["validation errors"]}, 400
+
+# Add resources to the API
+api.add_resource(Restaurants, '/restaurants')
+api.add_resource(RestaurantById, '/restaurants/<int:id>')
+api.add_resource(Pizzas, '/pizzas')
+api.add_resource(RestaurantPizzas, '/restaurant_pizzas')
+
+if __name__ == "__main__":
+    app.run(port=5555, debug=True)
